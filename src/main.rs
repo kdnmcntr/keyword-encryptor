@@ -1,0 +1,94 @@
+use std::io;
+use std::env;
+use std::fs::{File};
+use std::thread;
+use std::sync::{Arc};
+use rand::{SeedableRng, RngCore};
+use rand_chacha::ChaCha20Rng;
+use io_at::{ReadAt, WriteAt};
+
+fn hash_string(in_string: &str) -> u64 {
+
+    let mut hash_value: u64 = 0;
+    let prime = 131;
+
+    for c in in_string.bytes() {
+        if hash_value > std::u64::MAX / 2 {
+            hash_value /= 2;
+        }
+        hash_value += (c as u16 * prime) as u64;
+    }
+
+    hash_value 
+}
+
+fn main() -> io::Result<()> {
+    let args: Vec<String> = env::args().collect();
+    if args.len() != 4 {
+        println!("Incorrect number of arguments.");
+        panic!();
+    }
+    
+    let source: &str = &args[1];
+    let keyword: &str = &args[2];
+    let output: &str = &args[3];
+
+    let source_file = File::options().read(true).open(source)?;
+    let output_file = File::create(output)?;
+
+    let source_metadata = source_file.metadata()?;
+    let file_size = source_metadata.len();
+
+    output_file.set_len(file_size)?;
+
+    let seed: u64 = hash_string(keyword);
+    let mut rng = ChaCha20Rng::seed_from_u64(seed);
+
+    let segment_size: u64 = 1048576; // 1 MB 1048576, 1 KB 1024
+    let segment_number: u64 = file_size / segment_size + 1;
+
+    let mut handles = vec![];
+    let mut new_seeds = vec![]; 
+
+    let source_file = Arc::new(source_file);
+    let output_file = Arc::new(output_file);
+
+    for i in 0..segment_number {
+        new_seeds.push(rng.next_u64());
+        let new_seeds_clone = new_seeds.clone();
+
+        let source_file_clone = Arc::clone(&source_file);
+        let output_file_clone = Arc::clone(&output_file);
+
+        let handle = thread::spawn(move || {
+            
+
+            let mut new_rng = ChaCha20Rng::seed_from_u64(new_seeds_clone[i as usize]);
+            
+            let mut buffer = [0u8; 8];
+            for j in 0..(segment_size / 8) {
+                let num_bytes_read = source_file_clone.read_at(&mut buffer, (segment_size * i) + (j * 8)).unwrap(); // read 8 bytes from the input file, store in buffer
+                
+                if num_bytes_read == 0 {
+                    break;
+                }
+                
+                let read_data = u64::from_be_bytes(buffer); // convert buffer of 8 bytes into u64
+                let rand_data = new_rng.next_u64(); // generate a new u64
+                let new_data = read_data ^ rand_data; // xor the two u64s
+                buffer = new_data.to_be_bytes(); // convert resulting u64 back into array of 8 bytes
+                output_file_clone.as_ref().write_at(&buffer, (segment_size * i) + (j * 8)).unwrap(); // write buffer to the output file
+                buffer = [0u8; 8]; // reset buffer
+            }
+        });
+
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        handle.join().unwrap();
+    }
+
+    Ok(())
+
+}
