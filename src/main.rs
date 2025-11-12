@@ -4,16 +4,17 @@ use std::fs::{File};
 use std::thread;
 use std::sync::{Arc};
 use std::time::{Instant, Duration};
-use std::hash::{DefaultHasher, Hash, Hasher};
+use sha2::{Sha256, Digest};
 use rand::{SeedableRng, RngCore};
 use rand_chacha::ChaCha20Rng;
 use io_at::{ReadAt, WriteAt};
 use indicatif::{ProgressBar, ProgressStyle};
 
-fn hash_string(my_string: &str) -> u64 {
-    let mut s = DefaultHasher::new();
-    my_string.hash(&mut s);
-    s.finish()
+fn hash_string(keyword: &str) -> u64 {
+    let mut hasher = Sha256::new();
+    hasher.update(keyword.as_bytes());
+    let result = hasher.finalize();
+    u64::from_be_bytes(result[0..8].try_into().unwrap())
 }
 
 fn format_time(time: Duration) -> String {
