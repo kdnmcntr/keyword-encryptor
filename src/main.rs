@@ -63,10 +63,9 @@ fn main() -> io::Result<()> {
     let mut rng = ChaCha20Rng::seed_from_u64(seed);
 
     let segment_size: u64 = 1048576; // 1 MB 1048576, 1 KB 1024
-    let number_of_segments: u64 = file_size / segment_size + 1;
+    let number_of_segments = (file_size + segment_size - 1) / segment_size;
 
     let mut handles = vec![];
-    let mut new_seeds = vec![]; 
 
     let source_file = Arc::new(source_file);
     let output_file = Arc::new(output_file);
@@ -81,8 +80,7 @@ fn main() -> io::Result<()> {
     println!("\nProcessing file...");
 
     for i in 0..number_of_segments {
-        new_seeds.push(rng.next_u64());
-        let new_seeds_clone = new_seeds.clone();
+        let new_seed = rng.next_u64();
 
         let source_file_clone = Arc::clone(&source_file);
         let output_file_clone = Arc::clone(&output_file);
@@ -92,14 +90,23 @@ fn main() -> io::Result<()> {
         let handle = thread::spawn(move || {
             
 
-            let mut new_rng = ChaCha20Rng::seed_from_u64(new_seeds_clone[i as usize]);
+            let mut new_rng = ChaCha20Rng::seed_from_u64(new_seed);
             
             let mut buffer = [0u8; 8];
             for j in 0..(segment_size / 8) {
-                let num_bytes_read = source_file_clone.read_at(&mut buffer, (segment_size * i) + (j * 8)).unwrap(); // read 8 bytes from the input file, store in buffer
+                let num_bytes_read = source_file_clone.read_at(&mut buffer, (segment_size * i) + (j * 8)).unwrap_or(0); // read 8 bytes from the input file, store in buffer
                 
                 if num_bytes_read == 0 {
                     break;
+                }
+                if num_bytes_read < 8 {
+                    let rand_data = new_rng.next_u64();
+                    let rand_data_array = rand_data.to_be_bytes();
+                    for k in 0..num_bytes_read {
+                        let new_data = buffer[k] ^ rand_data_array[k];
+                        let new_buff = [new_data];
+                        output_file_clone.as_ref().write_at(&new_buff, (segment_size * i) + (j * 8) + (k as u64)).unwrap();
+                    }
                 }
                 
                 let read_data = u64::from_be_bytes(buffer); // convert buffer of 8 bytes into u64
