@@ -32,7 +32,7 @@ fn format_time(time: Duration) -> String {
         } else {
             let hours = mins / 60;
             mins = mins % 60;
-            return String::from(hours.to_string() + " hours, " + &mins.to_string() + " minutes," + &secs.to_string() + " seconds");
+            return String::from(hours.to_string() + " hours, " + &mins.to_string() + " minutes, " + &secs.to_string() + " seconds");
         }
     }
 }
